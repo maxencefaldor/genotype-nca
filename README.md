@@ -1,2 +1,2 @@
-# neural-cellular-automata
-Neural Cellular Automata
+# Neural Cellular Automata
+Differentiable Model of Morphogenesis
