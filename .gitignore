@@ -1,6 +1,10 @@
 # Singularity generated files
 apptainer/*.sif
 apptainer/tmp/
+apptainer/var_tmp/
+
+# logs
+notebooks/train_log/
 
 # Hydra
 outputs/
