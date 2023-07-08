@@ -3,8 +3,12 @@ apptainer/*.sif
 apptainer/tmp/
 apptainer/var_tmp/
 
-# logs
-notebooks/train_log/
+# intput/output
+input/
+output/
+
+# Heavy files
+*.zip
 
 # Hydra
 outputs/
