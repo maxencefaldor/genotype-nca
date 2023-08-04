@@ -1,35 +1,51 @@
-Bootstrap: library
-From: airl_lab/default/airl_env:qdax_f57720d0
+Bootstrap: docker
+From: nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04
 
 %labels
     Author m.faldor22@imperial.ac.uk
-    Author g.bena21@imperial.ac.uk
 
 %help
-    Neural Cellular Automata
+    Genotype Neural Cellular Automata
 
-%files
-    requirements.txt
+%environment
+	# Activate virtual environment
+	export VIRTUAL_ENV="/venv"
+	export _OLD_VIRTUAL_PATH="$PATH"
+	export PATH="$VIRTUAL_ENV/bin:$PATH"
+
+	# System
+	export TZ=Europe/London
 
 %post
-    # Update
-    apt-get update && apt-get upgrade -y
+	export DEBIAN_FRONTEND=noninteractive
 
-    # Install
-    pip3 install --upgrade pip
-    pip3 install -r /requirements.txt
-    pip3 install jaxlib==0.3.15+cuda11_cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+	# Update and install required libraries
+	apt update
+	apt install -y wget git software-properties-common
 
-    # Create working directory
-    mkdir /project/
-    cd /project/
+	# Install Python
+	add-apt-repository ppa:deadsnakes/ppa
+	apt install -y python3.11 python3.11-venv
 
-    git clone https://github.com/maxencefaldor/neural-cellular-automata .
-    git checkout $COMMIT
+	# Create a virtual environment
+	python3.11 -m venv /venv
+	. /venv/bin/activate
+	python -m ensurepip
+	pip install --upgrade pip
 
-%apprun main
-    # Enter project
-    cd /project/
+	# Install JAX
+	pip install --upgrade jax==0.4.9 jaxlib==0.4.7+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
-    # Run main
-    python3 main.py "$@"
+	# Clone repository to /project/
+	git clone https://gitlab.doc.ic.ac.uk/AIRL/research_projects/maxence_faldor/v-qd.git /project/
+	cd /project/
+	git checkout $COMMIT
+	git config --global --add safe.directory '*'
+
+	# Install requirements
+	pip install -r requirements.txt
+
+%runscript
+	# Run main
+	python /project/main.py "$@"
+
