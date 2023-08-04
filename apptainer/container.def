@@ -25,16 +25,16 @@ From: nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04
 
 	# Install Python
 	add-apt-repository ppa:deadsnakes/ppa
-	apt install -y python3.11 python3.11-venv
+	apt install -y python3.10 python3.10-venv
 
 	# Create a virtual environment
-	python3.11 -m venv /venv
+	python3.10 -m venv /venv
 	. /venv/bin/activate
 	python -m ensurepip
 	pip install --upgrade pip
 
 	# Install JAX
-	pip install --upgrade jax==0.4.9 jaxlib==0.4.7+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+	pip install --upgrade jax==0.4.13 jaxlib==0.4.7+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
 	# Clone repository to /project/
 	git clone https://gitlab.doc.ic.ac.uk/AIRL/research_projects/maxence_faldor/v-qd.git /project/

@@ -1,7 +1,12 @@
-typing-extensions==4.3.0
-jax==0.3.17
-flax==0.6.0
-wandb==0.14.0
-tqdm==4.65.0
-moviepy==1.0.3
+numpy
+scipy
+jax
+flax
+scikit-learn
+seaborn
+ipython
+ipykernel
+imageio
+hydra-core
+wandb
 
