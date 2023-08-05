@@ -9,7 +9,7 @@ from . import cell
 
 
 class NCA(nn.Module):
-	channel_size: int
+	cell_state_size: int
 	fire_rate: float
 
 	@nn.compact
@@ -21,7 +21,7 @@ class NCA(nn.Module):
 
 		# Update
 		dx = nn.relu(nn.Conv(features=128, kernel_size=(1, 1))(y))
-		dx = nn.Conv(features=self.channel_size, kernel_size=(1, 1), kernel_init=nn.initializers.zeros)(dx) * step_size
+		dx = nn.Conv(features=self.cell_state_size, kernel_size=(1, 1), kernel_init=nn.initializers.zeros)(dx) * step_size
 		update_mask = jax.random.uniform(random_key, shape=(*x.shape[:-1], 1), minval=0., maxval=1.) <= self.fire_rate
 		x += dx * update_mask
 

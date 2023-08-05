@@ -1,13 +1,20 @@
 name: emoji
 
-channel_size: 16
-target_padding: 16
-target_size: 40
+# Cell state
+phenotype_size: 3  # RGBA
+hidden_size: 12  # In ``Growing Neural Cellular Automata`` paper, the total cell state size is 16 = 3 + 1 + 0 + 12.
+genotype_size: 0  # In ``Growing Neural Cellular Automata`` paper, there is no genotype.
+fire_rate: 0.5
+
+# Emoji
+emojis: "🦎😀💥👁🐠🦋🐞🕸🥨🎄"
+emoji_size: 40
+emoji_padding: 16
+
+# Train
 batch_size: 8
 pool_size: 1024
-fire_rate: 0.5
 learning_rate: 2e-3
 
-target_emoji: "🦎"
-
+# Experiment
 experiment_type: "Regenerating"  # ["Growing", "Persistent", "Regenerating"]
