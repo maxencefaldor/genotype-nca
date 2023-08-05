@@ -34,10 +34,10 @@ From: nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04
 	pip install --upgrade pip
 
 	# Install JAX
-	pip install --upgrade jax==0.4.13 jaxlib==0.4.7+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+	pip install --upgrade jax==0.4.9 jaxlib==0.4.7+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
 	# Clone repository to /project/
-	git clone https://gitlab.doc.ic.ac.uk/AIRL/research_projects/maxence_faldor/v-qd.git /project/
+	git clone https://github.com/maxencefaldor/genotype-nca.git /project/
 	cd /project/
 	git checkout $COMMIT
 	git config --global --add safe.directory '*'
