@@ -7,6 +7,6 @@ seaborn
 ipython
 ipykernel
 imageio
+tqdm
 hydra-core
 wandb
-
