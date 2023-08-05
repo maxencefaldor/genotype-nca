@@ -115,6 +115,59 @@ def main(config: Config) -> None:
 
 		return train_state, loss, cells_states_
 
+	def train(carry, x):
+		train_state, pool = carry
+		random_key = x
+
+		random_key, random_subkey_1, random_subkey_2, random_subkey_3, random_subkey_4, random_subkey_5, random_subkey_6 = jax.random.split(random_key, 7)
+
+		if use_pattern_pool:
+			# Sample cells' states from pool
+			idx, cells_states, phenotypes_target = pool.sample(random_subkey_1, config.exp.batch_size)
+
+			# Rank by loss
+			loss_rank = jnp.flip(jnp.argsort(loss_f(cells_states, phenotypes_target)))
+			idx = jnp.take(idx, loss_rank, axis=0)
+			cells_states = jnp.take(cells_states, loss_rank, axis=0)
+			phenotypes_target = jnp.take(phenotypes_target, loss_rank, axis=0)
+
+			# Sample new phenotype target
+			new_phenotype_target_index = jax.random.randint(random_subkey_2, shape=(), minval=0, maxval=trainset_phenotypes_target.shape[0])
+			new_phenotype_target = jnp.take(trainset_phenotypes_target, new_phenotype_target_index, axis=0)
+			new_cells_state = init_cells_state(phenotype_to_genotype(new_phenotype_target))
+			cells_states = cells_states.at[0].set(new_cells_state)
+			phenotypes_target_ = phenotypes_target.at[0].set(new_phenotype_target)
+
+			if n_damages:
+				damage = 1.0 - make_circle_masks(random_subkey_3, n_damages, height, width)[..., None]
+				cells_states = cells_states.at[-n_damages:].set(cells_states[-n_damages:] * damage)
+		else:
+			genotypes = jax.random.choice(random_subkey_4, trainset_genotypes_target, shape=(config.exp.batch_size,), replace=True)
+			cells_states = jax.vmap(init_cells_state)(genotypes)
+
+		n_iterations = jax.random.randint(random_subkey_5, shape=(), minval=64, maxval=96)
+		train_state, loss, cells_states_ = train_step(train_state, random_subkey_6, cells_states, phenotypes_target_, n_iterations)
+
+		if use_pattern_pool:
+			pool = pool.commit(idx, cells_states_, phenotypes_target_)
+		
+		return (train_state, pool), (loss, cells_states, cells_states_, phenotypes_target_,)
+
+	# num_iterations = 8000
+	# log_period = 10
+	# for i in range(num_iterations//log_period):
+	# 	random_key, random_subkey = jax.random.split(random_key)
+	# 	(train_state, pool), (loss, cells_states, cells_states_, phenotypes_target_,) = jax.lax.scan(train,
+	#        (train_state, pool), 
+	# 	   jax.random.split(random_subkey, log_period),
+	# 	   length=log_period)
+		
+	# 	loss_log.append(*loss)
+	# 	visualize(cells_states[-1, :16], cells_states_[-1, :16], phenotypes_target_[-1, :16], i)
+	# 	plot_loss(loss_log)
+	# 	# export_model(train_state.params, i)
+	# 	print("\r step: %d, log10(loss): %.3f"%(len(loss_log), jnp.log10(jnp.mean(loss))), end="")
+
 	for i in range(8000+1):
 		random_key, random_subkey_1, random_subkey_2, random_subkey_3, random_subkey_4, random_subkey_5, random_subkey_6 = jax.random.split(random_key, 7)
 
@@ -153,7 +206,7 @@ def main(config: Config) -> None:
 		if i % 10 == 0:
 			visualize(cells_states[:16], cells_states_[:16], phenotypes_target_[:16], i)
 			plot_loss(loss_log)
-			export_model(train_state.params, i)
+			# export_model(train_state.params, i)
 
 		print("\r step: %d, log10(loss): %.3f"%(len(loss_log), jnp.log10(loss)), end="")
 
