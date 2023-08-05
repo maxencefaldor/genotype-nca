@@ -1,0 +1,11 @@
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: ./output/${exp.name}/${now:%Y-%m-%d_%H%M%S_%f}
+
+defaults:
+  - _self_
+  - exp: emojis
+
+seed: 0
