@@ -32,8 +32,8 @@ def main(config: Config) -> None:
 	n_damages = {"Growing": 0, "Persistent": 0, "Regenerating": 3}[config.exp.experiment_type]
 
 	# Load emojis
-	phenotypes_target = jnp.stack([load_emoji(emoji, config.exp.emoji_size, config.exp.emoji_padding) for emoji in config.exp.emojis], axis=0)
-	height, width = phenotypes_target[0].shape[:2]
+	dataset_phenotypes_target = jnp.stack([load_emoji(emoji, config.exp.emoji_size, config.exp.emoji_padding) for emoji in config.exp.emojis], axis=0)
+	height, width = dataset_phenotypes_target[0].shape[:2]
 
 	# Cell states
 	cell_state_size = config.exp.phenotype_size+1+config.exp.hidden_size+config.exp.genotype_size
@@ -55,20 +55,20 @@ def main(config: Config) -> None:
 		return cells_state.at[height//2, width//2].set(cell_state)
 
 	# Dataset
-	phenotypes_target = phenotypes_target[0:1]
-	genotypes_target = jax.vmap(phenotype_to_genotype)(phenotypes_target)
+	trainset_phenotypes_target = dataset_phenotypes_target[:1]
+	trainset_genotypes_target = jax.vmap(phenotype_to_genotype)(trainset_phenotypes_target)
 
 	# Pool
-	idx = jax.random.choice(random_key, phenotypes_target.shape[0], shape=(config.exp.pool_size,), replace=True)
-	phenotypes_target_init = jnp.take(phenotypes_target, idx, axis=0)
-	genotypes_target_init = jnp.take(genotypes_target, idx, axis=0)
+	idx = jax.random.choice(random_key, trainset_phenotypes_target.shape[0], shape=(config.exp.pool_size,), replace=True)
+	phenotypes_target_init = jnp.take(trainset_phenotypes_target, idx, axis=0)
+	genotypes_target_init = jnp.take(trainset_genotypes_target, idx, axis=0)
 	cells_states_init = jax.vmap(init_cells_state)(genotypes_target_init)
 	pool = Pool(cells_states=cells_states_init, phenotypes_target=phenotypes_target_init)
 
 	# NCA
 	nca = NCA(cell_state_size=cell_state_size, fire_rate=config.exp.fire_rate)
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
-	params = nca.init(random_subkey_1, random_subkey_2, init_cells_state(phenotype_to_genotype(phenotypes_target)))
+	params = nca.init(random_subkey_1, random_subkey_2, cells_states_init[0])
 	params = nca.set_kernel(params)
 
 	# Train state
@@ -91,6 +91,7 @@ def main(config: Config) -> None:
 		tx=tx)
 
 	# Train
+	@jax.jit
 	def loss_f(cell_states, phenotype):
 		return jnp.mean(jnp.square(to_rgba(cell_states) - phenotype), axis=(-1, -2, -3))
 
@@ -100,7 +101,7 @@ def main(config: Config) -> None:
 	def scan_apply(carry, random_key):
 		(params, cells_states,) = carry
 		cells_states_ = train_state.apply_fn(params, random_key, cells_states)
-		return (params, cells_states_), (cells_states_,)
+		return (params, cells_states_), ()
 
 	@partial(jax.jit, static_argnames=("n_iterations",))
 	def train_step(train_state, random_key, cells_states, phenotypes_target, n_iterations):
@@ -128,9 +129,9 @@ def main(config: Config) -> None:
 			phenotypes_target = jnp.take(phenotypes_target, loss_rank, axis=0)
 
 			# Sample new phenotype target
-			new_phenotype_target_index = jax.random.randint(random_subkey_2, shape=(), minval=0, maxval=phenotypes_target.shape[0])
-			new_phenotype_target = jnp.take(phenotypes_target, new_phenotype_target_index, axis=0)
-			new_cells_state = init_cell_state(phenotype_to_genotype(new_phenotype_target))
+			new_phenotype_target_index = jax.random.randint(random_subkey_2, shape=(), minval=0, maxval=trainset_phenotypes_target.shape[0])
+			new_phenotype_target = jnp.take(trainset_phenotypes_target, new_phenotype_target_index, axis=0)
+			new_cells_state = init_cells_state(phenotype_to_genotype(new_phenotype_target))
 			cells_states = cells_states.at[0].set(new_cells_state)
 			phenotypes_target_ = phenotypes_target.at[0].set(new_phenotype_target)
 
@@ -138,7 +139,7 @@ def main(config: Config) -> None:
 				damage = 1.0 - make_circle_masks(random_subkey_3, n_damages, height, width)[..., None]
 				cells_states = cells_states.at[-n_damages:].set(cells_states[-n_damages:] * damage)
 		else:
-			genotypes = jax.random.choice(random_subkey_4, genotypes_target.shape[0], shape=(config.exp.batch_size,), replace=True)
+			genotypes = jax.random.choice(random_subkey_4, trainset_genotypes_target, shape=(config.exp.batch_size,), replace=True)
 			cells_states = jax.vmap(init_cells_state)(genotypes)
 
 		n_iterations = jax.random.randint(random_subkey_5, shape=(), minval=64, maxval=96)

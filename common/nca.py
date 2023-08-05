@@ -30,7 +30,7 @@ class NCA(nn.Module):
 		return x * life_mask
 
 	@partial(jax.jit, static_argnames=("self",))
-	def _get_kernel(self, angle=0.):
+	def _get_kernel(self, angle):
 		identify = jnp.array([0., 1., 0.])
 		identify = jnp.outer(identify, identify)
 		dx = jnp.outer(jnp.array([1., 2., 1.]), jnp.array([-1., 0., 1.])) / 8.0  # Sobel filter

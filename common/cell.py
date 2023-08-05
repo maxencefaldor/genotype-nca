@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
@@ -22,6 +24,7 @@ def get_living_mask(x):
 	alpha = x[..., 3:4]
 	return nn.max_pool(alpha, window_shape=(3, 3), strides=(1, 1), padding="SAME") > 0.1
 
+@partial(jax.jit, static_argnames=("n", "h", "w",))
 def make_circle_masks(random_key, n, h, w):
 	x = jnp.linspace(-1.0, 1.0, w)[None, None, :]
 	y = jnp.linspace(-1.0, 1.0, h)[None, :, None]

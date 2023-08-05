@@ -49,6 +49,7 @@ def plot_loss(loss_log):
 	plt.title("Loss (log10)")
 	plt.plot(jnp.log10(jnp.array(loss_log)), ".", alpha=0.1)
 	plt.savefig("loss.png")
+	plt.close()
 
 
 def export_model(params, i):
