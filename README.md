@@ -1,2 +1,3 @@
-# Neural Cellular Automata
-Differentiable Model of Morphogenesis
+# Genotype Neural Cellular Automata
+
+Growing neural cellular automata used to develop genotypes.
