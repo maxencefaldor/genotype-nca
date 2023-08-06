@@ -8,7 +8,7 @@ import optax
 from common.cell import to_rgba, make_circle_masks
 from common.pool import Pool
 from common.nca import NCA
-from common.utils import Config, load_emoji, visualize, plot_loss, export_model
+from common.utils import Config, load_emoji, visualize_nca, plot_loss, export_model
 
 import hydra
 from hydra.core.config_store import ConfigStore
@@ -150,7 +150,7 @@ def main(config: Config) -> None:
 		print("\r step: %d, log10(loss): %.3f"%(len(loss_log), jnp.log10(loss)), end="")
 
 		if i % 100 == 0:
-			visualize(cells_states[-16:], cells_states_[:16], phenotypes_target_[-16:], i)
+			visualize_nca(cells_states[-16:], cells_states_[-16:], phenotypes_target_[-16:], i)
 			plot_loss(loss_log)
 	
 	export_model(train_state.params, i)

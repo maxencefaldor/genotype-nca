@@ -35,17 +35,17 @@ def load_emoji(emoji, emoji_size, emoji_padding):
 	return jnp.pad(image, ((emoji_padding, emoji_padding), (emoji_padding, emoji_padding), (0, 0)))
 
 
-def load_face(dir, face_shape) -> jnp.ndarray:
-	if face_shape[-1] == 1:
+def load_face(dir, face_shape, grayscale: bool) -> jnp.ndarray:
+	if grayscale:
 		image = PIL.Image.open(dir).convert("L")
 		image = jnp.expand_dims(jnp.array(image, dtype=np.float32), axis=-1) / 255.
-	elif face_shape[-1] == 3:
+		image = pix.resize_with_crop_or_pad(image, 178, 178)
+		image = jax.image.resize(image, (*face_shape, 1), method="linear")
+	else:
 		image = PIL.Image.open(dir)
 		image = jnp.array(image, dtype=np.float32) / 255.
-	else:
-		raise ValueError("Face must be 1 or 3 channels.")
-	image = pix.resize_with_crop_or_pad(image, 178, 178)
-	image = jax.image.resize(image, face_shape, method="linear")
+		image = pix.resize_with_crop_or_pad(image, 178, 178)
+		image = jax.image.resize(image, (*face_shape, 3), method="linear")
 	return image
 
 
@@ -53,7 +53,7 @@ def jnp2pil(a):
 	return PIL.Image.fromarray(np.array(jnp.clip(a, a_min=0., a_max=1.) * 255, dtype=np.uint8))
 
 
-def visualize(cells_states_before, cells_states_after, phenotypes_target, i):
+def visualize_nca(cells_states_before, cells_states_after, phenotypes_target, i):
 	cells_states_before = jnp.hstack(cell.to_rgb(cells_states_before))
 	cells_states_after = jnp.hstack(cell.to_rgb(cells_states_after))
 	phenotypes_target = jnp.hstack(cell.to_rgb(phenotypes_target))
@@ -62,6 +62,16 @@ def visualize(cells_states_before, cells_states_after, phenotypes_target, i):
 	# Save
 	img = jnp2pil(img)
 	img.save("batch_%04d.png"%i)
+
+
+def visualize_vae(face_recon, face_target, i):
+	face_recon = jnp.hstack(face_recon)
+	face_target = jnp.hstack(face_target)
+	image = jnp.vstack([face_recon, face_target])
+
+	# Save
+	image = jnp2pil(image)
+	image.save("batch_%04d.png"%i)
 
 
 def plot_loss(loss_log):

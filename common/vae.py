@@ -8,7 +8,6 @@ import optax
 
 class Encoder(nn.Module):
     latent_size: int
-    dropout_rate: float
 
     @nn.compact
     def __call__(self, x):
@@ -55,7 +54,7 @@ class VAE(nn.Module):
 
     def __call__(self, x, random_key):
         z, mean, logvar = self.encode(x, random_key)
-        logits = self.decode(z, random_key)
+        logits = self.decode(z)
         return logits, mean, logvar
 
 @jax.jit

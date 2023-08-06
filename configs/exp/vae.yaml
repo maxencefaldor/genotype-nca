@@ -3,9 +3,13 @@ name: vae
 dataset_dir: /project/input/img_align_celeba/
 attr_dir: /project/input/annotations/list_attr_celeba.txt
 landmarks_dir: /project/input/annotations/list_landmarks_align_celeba.txt
-face_shape: [64, 64, 1]
+
+face_shape: [64, 64]
+grayscale: False
 
 # VAE
-latent_size: 64
-batch_size: 32
+batch_size: 256
 learning_rate: 1e-3
+latent_size: 64
+n_iterations: 1_000_000
+log_period: 100
