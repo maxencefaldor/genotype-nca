@@ -2,6 +2,7 @@ numpy
 scipy
 jax
 flax
+dm-pix
 scikit-learn
 seaborn
 ipython
