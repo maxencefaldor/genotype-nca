@@ -37,7 +37,7 @@ class NCA(nn.Module):
 		dy = dx.T
 		c, s = jnp.cos(angle), jnp.sin(angle)
 		kernel = jnp.stack([identify, c*dx-s*dy, s*dx+c*dy], axis=-1)[:, :, None, :]
-		kernel = jnp.tile(kernel, (1, 1, 1, 16))
+		kernel = jnp.tile(kernel, (1, 1, 1, self.cell_state_size))
 		return kernel
 
 	def set_kernel(self, params, angle=0.):

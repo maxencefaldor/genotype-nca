@@ -39,8 +39,8 @@ def main(config: Config) -> None:
 	cell_state_size = config.exp.phenotype_size+1+config.exp.hidden_size+config.exp.genotype_size
 
 	@jax.jit
-	def phenotype_to_genotype(phenotype):
-		return jnp.array([])
+	def phenotype_target_idx_to_genotype(phenotype_target_idx):
+		return jax.nn.one_hot(phenotype_target_idx, num_classes=config.exp.genotype_size)
 
 	@jax.jit
 	def init_cell_state(genotype):
@@ -55,15 +55,13 @@ def main(config: Config) -> None:
 		return cells_state.at[height//2, width//2].set(cell_state)
 
 	# Trainset
-	trainset_phenotypes_target = dataset_phenotypes_target[:1]
-	trainset_genotypes_target = jax.vmap(phenotype_to_genotype)(trainset_phenotypes_target)
+	trainset_phenotypes_target = dataset_phenotypes_target[:config.exp.genotype_size]
+	trainset_genotypes_target = jax.vmap(phenotype_target_idx_to_genotype)(jnp.arange(config.exp.genotype_size))
 
 	# Pool
-	idx = jax.random.choice(random_key, trainset_phenotypes_target.shape[0], shape=(config.exp.pool_size,), replace=True)
-	phenotypes_target_init = jnp.take(trainset_phenotypes_target, idx, axis=0)
-	genotypes_target_init = jnp.take(trainset_genotypes_target, idx, axis=0)
-	cells_states_init = jax.vmap(init_cells_state)(genotypes_target_init)
-	pool = Pool(cells_states=cells_states_init, phenotypes_target=phenotypes_target_init)
+	phenotypes_target_idx_init = jax.random.choice(random_key, trainset_phenotypes_target.shape[0], shape=(config.exp.pool_size,), replace=True)
+	cells_states_init = jax.vmap(init_cells_state)(jnp.take(trainset_genotypes_target, phenotypes_target_idx_init, axis=0))
+	pool = Pool(cells_states=cells_states_init, phenotypes_target_idx=phenotypes_target_idx_init)
 
 	# NCA
 	nca = NCA(cell_state_size=cell_state_size, fire_rate=config.exp.fire_rate)
@@ -104,7 +102,7 @@ def main(config: Config) -> None:
 		return (params, cells_states_), ()
 
 	@partial(jax.jit, static_argnames=("n_iterations",))
-	def train_step(train_state, random_key, cells_states, phenotypes_target, n_iterations):
+	def train_step(random_key, train_state, cells_states, phenotypes_target, n_iterations):
 		def loss_fn(params):
 			random_keys = jax.random.split(random_key, n_iterations)
 			(params, cells_states_), _ = jax.lax.scan(scan_apply, (params, cells_states,), random_keys, length=n_iterations)
@@ -120,20 +118,19 @@ def main(config: Config) -> None:
 
 		if use_pattern_pool:
 			# Sample cells' states from pool
-			idx, cells_states, phenotypes_target = pool.sample(random_subkey_1, config.exp.batch_size)
+			idx, cells_states, phenotypes_target_idx = pool.sample(random_subkey_1, config.exp.batch_size)
 
 			# Rank by loss
-			loss_rank = jnp.flip(jnp.argsort(loss_f(cells_states, phenotypes_target)))
+			loss_rank = jnp.flip(jnp.argsort(loss_f(cells_states, jnp.take(trainset_phenotypes_target, phenotypes_target_idx, axis=0))))
 			idx = jnp.take(idx, loss_rank, axis=0)
 			cells_states = jnp.take(cells_states, loss_rank, axis=0)
-			phenotypes_target = jnp.take(phenotypes_target, loss_rank, axis=0)
+			phenotypes_target_idx = jnp.take(phenotypes_target_idx, loss_rank, axis=0)
 
 			# Sample new phenotype target
-			new_phenotype_target_index = jax.random.randint(random_subkey_2, shape=(), minval=0, maxval=trainset_phenotypes_target.shape[0])
-			new_phenotype_target = jnp.take(trainset_phenotypes_target, new_phenotype_target_index, axis=0)
-			new_cells_state = init_cells_state(phenotype_to_genotype(new_phenotype_target))
+			new_phenotype_target_idx = jax.random.randint(random_subkey_2, shape=(), minval=0, maxval=trainset_phenotypes_target.shape[0])
+			new_cells_state = init_cells_state(jnp.take(trainset_genotypes_target, new_phenotype_target_idx, axis=0))
 			cells_states = cells_states.at[0].set(new_cells_state)
-			phenotypes_target_ = phenotypes_target.at[0].set(new_phenotype_target)
+			phenotypes_target_idx_ = phenotypes_target_idx.at[0].set(new_phenotype_target_idx)
 
 			if n_damages:
 				damage = 1.0 - make_circle_masks(random_subkey_3, n_damages, height, width)[..., None]
@@ -143,19 +140,20 @@ def main(config: Config) -> None:
 			cells_states = jax.vmap(init_cells_state)(genotypes)
 
 		n_iterations = jax.random.randint(random_subkey_5, shape=(), minval=64, maxval=96)
-		train_state, loss, cells_states_ = train_step(train_state, random_subkey_6, cells_states, phenotypes_target_, int(n_iterations))
+		phenotypes_target_ = jnp.take(trainset_phenotypes_target, phenotypes_target_idx_, axis=0)
+		train_state, loss, cells_states_ = train_step(random_subkey_6, train_state, cells_states, phenotypes_target_, int(n_iterations))
 
 		if use_pattern_pool:
-			pool = pool.commit(idx, cells_states_, phenotypes_target_)
+			pool = pool.commit(idx, cells_states_, phenotypes_target_idx_)
 
 		loss_log.append(loss)
+		print("\r step: %d, log10(loss): %.3f"%(len(loss_log), jnp.log10(loss)), end="")
 
 		if i % 100 == 0:
-			visualize(cells_states[:16], cells_states_[:16], phenotypes_target_[:16], i)
+			visualize(cells_states[-16:], cells_states_[:16], phenotypes_target_[-16:], i)
 			plot_loss(loss_log)
-			# export_model(train_state.params, i)
-
-		print("\r step: %d, log10(loss): %.3f"%(len(loss_log), jnp.log10(loss)), end="")
+	
+	export_model(train_state.params, i)
 
 if __name__ == "__main__":
 	cs = ConfigStore.instance()

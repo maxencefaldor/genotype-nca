@@ -1,0 +1,11 @@
+name: vae
+
+dataset_dir: /project/input/img_align_celeba/
+attr_dir: /project/input/annotations/list_attr_celeba.txt
+landmarks_dir: /project/input/annotations/list_landmarks_align_celeba.txt
+face_shape: [64, 64, 1]
+
+# VAE
+latent_size: 64
+batch_size: 32
+learning_rate: 1e-3

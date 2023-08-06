@@ -4,8 +4,10 @@ from dataclasses import dataclass
 import pickle
 import requests
 import numpy as np
+import jax
 import jax.numpy as jnp
 from flax import serialization
+import dm_pix as pix
 import matplotlib.pyplot as plt
 import PIL.Image
 
@@ -31,6 +33,20 @@ def load_emoji(emoji, emoji_size, emoji_padding):
 	url = "https://github.com/googlefonts/noto-emoji/blob/main/png/128/emoji_u%s.png?raw=true"%code
 	image = load_image(url, emoji_size)
 	return jnp.pad(image, ((emoji_padding, emoji_padding), (emoji_padding, emoji_padding), (0, 0)))
+
+
+def load_face(dir, face_shape) -> jnp.ndarray:
+	if face_shape[-1] == 1:
+		image = PIL.Image.open(dir).convert("L")
+		image = jnp.expand_dims(jnp.array(image, dtype=np.float32), axis=-1) / 255.
+	elif face_shape[-1] == 3:
+		image = PIL.Image.open(dir)
+		image = jnp.array(image, dtype=np.float32) / 255.
+	else:
+		raise ValueError("Face must be 1 or 3 channels.")
+	image = pix.resize_with_crop_or_pad(image, 178, 178)
+	image = jax.image.resize(image, face_shape, method="linear")
+	return image
 
 
 def jnp2pil(a):

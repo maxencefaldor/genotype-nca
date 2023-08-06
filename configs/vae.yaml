@@ -6,6 +6,6 @@ hydra:
 
 defaults:
   - _self_
-  - exp: emojis
+  - exp: vae
 
 seed: 0
