@@ -1,5 +1,6 @@
 numpy
 scipy
+jax==0.4.7
 flax
 scikit-learn
 seaborn
