@@ -1,5 +1,6 @@
 from functools import partial
 
+import numpy as np
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
@@ -51,14 +52,15 @@ def main(config: Config) -> None:
 	# landmarks = jax.nn.standardize(landmarks, axis=0)
 
 	# Dataset
-	dataset_faces = []
-	for index, _ in tqdm.tqdm(df_attr_celeba.iterrows(), total=df_attr_celeba.shape[0]):
-		dataset_faces.append(load_face(config.exp.dataset_dir + index, config.exp.face_shape, config.exp.grayscale))
-		if len(dataset_faces) == 50_000:
-			break
-	dataset_faces = jnp.stack(dataset_faces)
+	if config.exp.grayscale:
+		dataset_faces = np.zeros((df_attr_celeba.shape[0], *config.exp.face_shape, 1))
+	else:
+		dataset_faces = np.zeros((df_attr_celeba.shape[0], *config.exp.face_shape, 3))
+	for i, (index, _,) in tqdm.tqdm(enumerate(df_attr_celeba.iterrows()), total=df_attr_celeba.shape[0]):
+		dataset_faces[i] = load_face(config.exp.dataset_dir + index, config.exp.face_shape, config.exp.grayscale)
 
 	# Trainset - Testset
+	dataset_faces = jnp.array(dataset_faces)
 	trainset_faces = dataset_faces[:int(0.9 * len(dataset_faces))]
 	testset_faces = dataset_faces[int(0.9 * len(dataset_faces)):]
 
@@ -102,6 +104,7 @@ def main(config: Config) -> None:
 
 	loss_log = []
 	for i in range(config.exp.n_iterations//config.exp.log_period):
+		# Train
 		random_keys = jax.random.split(random_key, 1+2*config.exp.log_period)
 		random_key, random_keys = random_keys[0], random_keys[1:]
 		(train_state, _,), loss = jax.lax.scan(
@@ -113,6 +116,7 @@ def main(config: Config) -> None:
 		loss_log += loss.tolist()
 		print("\r step: %d, log10(loss): %.3f"%((i+1)*config.exp.log_period, jnp.log10(loss[-1])), end="")
 
+		# Test
 		random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
 		batch_test = get_batch(random_subkey_1, testset_faces)
 		logits, _, _ = train_state.apply_fn(train_state.params, batch_test, random_subkey_2)
