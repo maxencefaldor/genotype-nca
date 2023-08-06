@@ -33,6 +33,10 @@ def load_emoji(emoji, emoji_size, emoji_padding):
 	return jnp.pad(image, ((emoji_padding, emoji_padding), (emoji_padding, emoji_padding), (0, 0)))
 
 
+def jnp2pil(a):
+	return PIL.Image.fromarray(np.array(jnp.clip(a, a_min=0., a_max=1.) * 255, dtype=np.uint8))
+
+
 def visualize(cells_states_before, cells_states_after, phenotypes_target, i):
 	cells_states_before = jnp.hstack(cell.to_rgb(cells_states_before))
 	cells_states_after = jnp.hstack(cell.to_rgb(cells_states_after))
@@ -40,7 +44,7 @@ def visualize(cells_states_before, cells_states_after, phenotypes_target, i):
 	img = jnp.vstack([cells_states_before, cells_states_after, phenotypes_target])
 
 	# Save
-	img = PIL.Image.fromarray(np.array(img * 255, dtype=np.uint8))
+	img = jnp2pil(img)
 	img.save("batch_%04d.png"%i)
 
 
