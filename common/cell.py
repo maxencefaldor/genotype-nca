@@ -21,7 +21,7 @@ def to_rgb(x):
 
 @jax.jit
 def get_living_mask(x):
-	alpha = x[..., 3:4]
+	alpha = to_alpha(x)
 	return nn.max_pool(alpha, window_shape=(3, 3), strides=(1, 1), padding="SAME") > 0.1
 
 @partial(jax.jit, static_argnames=("n", "h", "w",))

@@ -1,10 +1,12 @@
 from functools import partial
 from pathlib import Path
+import pickle
 
 import numpy as np
 import jax
 import jax.numpy as jnp
 from flax.training.train_state import TrainState
+from flax import serialization
 import optax
 import pandas as pd
 
@@ -32,6 +34,10 @@ def main(config: Config) -> None:
 	# Init a random key
 	random_key = jax.random.PRNGKey(config.seed)
 
+	# Experiment
+	use_pattern_pool = {"Growing": 0, "Persistent": 1, "Regenerating": 1}[config.exp.experiment_type]
+	n_damages = {"Growing": 0, "Persistent": 0, "Regenerating": 3}[config.exp.experiment_type]
+
 	# Load VAE
 	vae_dir = Path(config.exp.vae_dir)
 	vae_config = OmegaConf.load(vae_dir / ".hydra" / "config.yaml")
@@ -54,58 +60,94 @@ def main(config: Config) -> None:
 	df_landmarks_align_celeba /= 178/vae_config.exp.face_shape[0]
 
 	# Dataset
-	if vae_config.exp.grayscale:
-		dataset_faces = np.zeros((df_attr_celeba.shape[0], *vae_config.exp.face_shape, 1))
-	else:
-		dataset_faces = np.zeros((df_attr_celeba.shape[0], *vae_config.exp.face_shape, 3))
-	for i, (index, _,) in tqdm.tqdm(enumerate(df_attr_celeba.iterrows()), total=df_attr_celeba.shape[0]):
-		dataset_faces[i] = load_face(vae_config.exp.dataset_dir + index, vae_config.exp.face_shape, vae_config.exp.grayscale)
-		# if i == 1000:
-		# 	break
 	height, width = vae_config.exp.face_shape[:2]
+	h = jnp.arange(1, height+1)
+	w = jnp.arange(1, width+1)
+	mask = jnp.expand_dims((
+		(jnp.tile(h.reshape(-1, 1), (1, height)) > height//6) & \
+		(jnp.tile(h.reshape(-1, 1), (1, height)) <= height//6*5) & \
+		(jnp.tile(w, (width, 1)) > width//4) & \
+		(jnp.tile(w, (width, 1)) <= width//4*3)), axis=-1).astype(np.float32)
+
+	dataset_size = df_attr_celeba.shape[0]
+	dataset_size = 4
+	if vae_config.exp.grayscale:
+		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 1))
+	else:
+		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 3))
+	for i, (index, _,) in tqdm.tqdm(enumerate(df_attr_celeba.iterrows()), total=dataset_size):
+		dataset_phenotypes_target[i] = load_face(vae_config.exp.dataset_dir + index, vae_config.exp.face_shape, vae_config.exp.grayscale)
+		if i == dataset_size-1:
+			break
+	dataset_phenotypes_target = dataset_phenotypes_target * mask
 
 	# VAE
-	vae = vae_dict[vae_config.exp.vae_index](img_shape=dataset_faces[0].shape, latent_size=vae_config.exp.latent_size)
+	vae = vae_dict[vae_config.exp.vae_index](img_shape=dataset_phenotypes_target[0].shape, latent_size=vae_config.exp.latent_size)
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
-	params = vae.init(random_subkey_1, dataset_faces[0], random_subkey_2)
-	param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
+	vae_params = vae.init(random_subkey_1, random_subkey_2, dataset_phenotypes_target[0])
+	with open(vae_dir / "vae.pickle", "rb") as params_file:
+		state_dict = pickle.load(params_file)
+	vae_params = serialization.from_state_dict(vae_params, state_dict)
+	param_count = sum(x.size for x in jax.tree_util.tree_leaves(vae_params))
 	print("Number of parameters: ", param_count)
 
 	# Cell states
 	if vae_config.exp.grayscale:
-		cell_state_size = 1 + 1 + config.exp.hidden_size + vae_config.exp.latent_size
+		phenotype_size = 1
+		cell_state_size = phenotype_size + 1 + config.exp.hidden_size
 	else:
-		cell_state_size = 3 + 1 + config.exp.hidden_size + vae_config.exp.latent_size
+		phenotype_size = 3
+		cell_state_size = phenotype_size + 1 + config.exp.hidden_size
 
 	@jax.jit
-	def phenotype_target_idx_to_genotype(phenotype_target_idx):
-		return jax.nn.one_hot(phenotype_target_idx, num_classes=config.exp.genotype_size)
+	def phenotype_to_genotype(random_key, phenotype_target):
+		z, _, _ = vae.apply(vae_params, random_key, phenotype_target, method=vae.encode)
+		return z
 
 	@jax.jit
-	def init_cell_state(genotype):
-		cell_state = jnp.zeros((config.exp.phenotype_size+1+config.exp.hidden_size,))  # init cell_state
-		cell_state = cell_state.at[config.exp.phenotype_size:].set(1.0)  # set alpha and hidden channels to 1.0
-		return jnp.concatenate([cell_state, genotype])  # add genotype to cell_state
+	def init_cell_state():
+		cell_state = jnp.zeros((phenotype_size+1+config.exp.hidden_size,))  # init cell_state
+		cell_state = cell_state.at[phenotype_size:].set(1.0)  # set alpha and hidden channels to 1.0
+		return cell_state
 
 	@jax.jit
-	def init_cells_state(genotype):
-		cell_state = init_cell_state(genotype)
+	def init_cells_state(_):
+		cell_state = init_cell_state()
 		cells_state = jnp.zeros((height, width, cell_state_size,))
 		return cells_state.at[height//2, width//2].set(cell_state)
 
-	# Trainset
-	trainset_phenotypes_target = dataset_phenotypes_target[:config.exp.genotype_size]
-	trainset_genotypes_target = jax.vmap(phenotype_target_idx_to_genotype)(jnp.arange(config.exp.genotype_size))
+	def phenotype_to_genotype_scan(carry, x):
+		random_key, phenotype_target = x
+		z = phenotype_to_genotype(random_key, phenotype_target)
+		return (), z
+
+	random_keys = jax.random.split(random_key, 1+dataset_phenotypes_target.shape[0])
+	random_key, random_keys = random_keys[-1], random_keys[:-1]
+	_, dataset_genotypes_target = jax.lax.scan(
+		phenotype_to_genotype_scan,
+		(),
+		(random_keys, dataset_phenotypes_target),
+		length=dataset_phenotypes_target.shape[0])
+
+	# Trainset - Testset phenotypes
+	dataset_phenotypes_target = np.concatenate([dataset_phenotypes_target, jnp.tile(mask, (dataset_phenotypes_target.shape[0], 1, 1, 1))], axis=-1)
+	trainset_phenotypes_target = dataset_phenotypes_target[:int(0.9 * len(dataset_phenotypes_target))]
+	testset_phenotypes_target = dataset_phenotypes_target[int(0.9 * len(dataset_phenotypes_target)):]
+
+	# Trainset - Testset genotypes
+	trainset_genotypes_target = dataset_genotypes_target[:int(0.9 * len(dataset_genotypes_target))]
+	testset_genotypes_target = dataset_genotypes_target[int(0.9 * len(dataset_genotypes_target)):]
 
 	# Pool
 	phenotypes_target_idx_init = jax.random.choice(random_key, trainset_phenotypes_target.shape[0], shape=(config.exp.pool_size,), replace=True)
-	cells_states_init = jax.vmap(init_cells_state)(jnp.take(trainset_genotypes_target, phenotypes_target_idx_init, axis=0))
+	cells_states_init = jax.vmap(init_cells_state)(phenotypes_target_idx_init)
+	genotypes_target_init = jnp.take(trainset_genotypes_target, phenotypes_target_idx_init, axis=0)
 	pool = Pool(cells_states=cells_states_init, phenotypes_target_idx=phenotypes_target_idx_init)
 
 	# NCA
 	nca = NCA(cell_state_size=cell_state_size, fire_rate=config.exp.fire_rate)
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
-	params = nca.init(random_subkey_1, random_subkey_2, cells_states_init[0])
+	params = nca.init(random_subkey_1, random_subkey_2, cells_states_init[0], genotypes_target_init[0])
 	params = nca.set_kernel(params)
 
 	# Train state
@@ -139,15 +181,15 @@ def main(config: Config) -> None:
 
 	@jax.jit
 	def scan_apply(carry, random_key):
-		(params, cells_states,) = carry
-		cells_states_ = train_state.apply_fn(params, random_key, cells_states)
-		return (params, cells_states_), ()
+		(params, cells_states, genotype_target,) = carry
+		cells_states_ = train_state.apply_fn(params, random_key, cells_states, genotype_target)
+		return (params, cells_states_, genotype_target,), ()
 
 	@partial(jax.jit, static_argnames=("n_iterations",))
-	def train_step(random_key, train_state, cells_states, phenotypes_target, n_iterations):
+	def train_step(random_key, train_state, cells_states, genotype_target, phenotypes_target, n_iterations):
 		def loss_fn(params):
 			random_keys = jax.random.split(random_key, n_iterations)
-			(params, cells_states_), _ = jax.lax.scan(scan_apply, (params, cells_states,), random_keys, length=n_iterations)
+			(params, cells_states_, _,), _ = jax.lax.scan(scan_apply, (params, cells_states, genotype_target,), random_keys, length=n_iterations)
 			return loss_f(cells_states_, phenotypes_target).mean(), cells_states_
 
 		(loss, cells_states_), grads = jax.value_and_grad(loss_fn, has_aux=True)(train_state.params)
@@ -156,7 +198,7 @@ def main(config: Config) -> None:
 		return train_state, loss, cells_states_
 
 	for i in range(1, config.exp.n_iterations+1):
-		random_key, random_subkey_1, random_subkey_2, random_subkey_3, random_subkey_4, random_subkey_5, random_subkey_6 = jax.random.split(random_key, 7)
+		random_key, random_subkey_1, random_subkey_2, random_subkey_3, random_subkey_4, random_subkey_5 = jax.random.split(random_key, 6)
 
 		if use_pattern_pool:
 			# Sample cells' states from pool
@@ -178,12 +220,12 @@ def main(config: Config) -> None:
 				damage = 1.0 - make_circle_masks(random_subkey_3, n_damages, height, width)[..., None]
 				cells_states = cells_states.at[-n_damages:].set(cells_states[-n_damages:] * damage)
 		else:
-			genotypes = jax.random.choice(random_subkey_4, trainset_genotypes_target, shape=(config.exp.batch_size,), replace=True)
-			cells_states = jax.vmap(init_cells_state)(genotypes)
+			cells_states = jax.vmap(init_cells_state)(None)
 
-		n_iterations = jax.random.randint(random_subkey_5, shape=(), minval=64, maxval=96)
+		n_iterations = jax.random.randint(random_subkey_4, shape=(), minval=64, maxval=96)
+		genotypes_target = jnp.take(trainset_genotypes_target, phenotypes_target_idx_, axis=0)
 		phenotypes_target_ = jnp.take(trainset_phenotypes_target, phenotypes_target_idx_, axis=0)
-		train_state, loss, cells_states_ = train_step(random_subkey_6, train_state, cells_states, phenotypes_target_, int(n_iterations))
+		train_state, loss, cells_states_ = train_step(random_subkey_5, train_state, cells_states, genotypes_target, phenotypes_target_, int(n_iterations))
 
 		if use_pattern_pool:
 			pool = pool.commit(idx, cells_states_, phenotypes_target_idx_)

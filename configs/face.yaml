@@ -6,6 +6,6 @@ hydra:
 
 defaults:
   - _self_
-  - exp: faces
+  - exp: face
 
 seed: 0

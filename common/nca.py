@@ -13,13 +13,16 @@ class NCA(nn.Module):
 	fire_rate: float
 
 	@nn.compact
-	def __call__(self, random_key, x, step_size=1.0):
+	def __call__(self, random_key, x, genotype, step_size=1.0):
 		pre_life_mask = cell.get_living_mask(x)
 
 		# Perceive with depthwise convolution
 		y = nn.Conv(features=3*x.shape[-1], kernel_size=(3, 3), padding="SAME", feature_group_count=x.shape[-1], use_bias=False, name="perceive")(x)
 
 		# Update
+		genotype = jnp.repeat(genotype[..., None, :], repeats=x.shape[-3], axis=-2)
+		genotype = jnp.repeat(genotype[..., None, :], repeats=x.shape[-2], axis=-2)
+		y = jnp.concatenate([y, genotype], axis=-1) # add genotype
 		dx = nn.relu(nn.Conv(features=128, kernel_size=(1, 1))(y))
 		dx = nn.Conv(features=self.cell_state_size, kernel_size=(1, 1), kernel_init=nn.initializers.zeros)(dx) * step_size
 		update_mask = jax.random.uniform(random_key, shape=(*x.shape[:-1], 1), minval=0., maxval=1.) <= self.fire_rate

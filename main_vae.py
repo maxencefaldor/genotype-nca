@@ -63,7 +63,7 @@ def main(config: Config) -> None:
 	# VAE
 	vae = vae_dict[config.exp.vae_index](img_shape=dataset_faces[0].shape, latent_size=config.exp.latent_size)
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
-	params = vae.init(random_subkey_1, dataset_faces[0], random_subkey_2)
+	params = vae.init(random_subkey_1, random_subkey_2, dataset_faces[0])
 	param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
 	print("Number of parameters: ", param_count)
 
@@ -81,10 +81,10 @@ def main(config: Config) -> None:
 		return jax.random.choice(random_key, dataset, shape=(config.exp.batch_size,))
 
 	@jax.jit
-	def train_step(train_state: TrainState, batch: jnp.ndarray, random_key):
+	def train_step(random_key, train_state: TrainState, batch: jnp.ndarray):
 
 		def loss_fn(params):
-			logits, mean, logvar = train_state.apply_fn(params, batch, random_key)
+			logits, mean, logvar = train_state.apply_fn(params, random_key, batch)
 			return vae_loss(logits, batch, mean, logvar)
 
 		loss, grads = jax.value_and_grad(loss_fn)(train_state.params)
@@ -96,7 +96,7 @@ def main(config: Config) -> None:
 	def scan_train_step(carry, x):
 		train_state = carry
 		random_key, batch = x
-		train_state, loss = train_step(train_state, batch, random_key)
+		train_state, loss = train_step(random_key, train_state, batch)
 		return train_state, loss
 
 	loss_log = []
@@ -118,7 +118,7 @@ def main(config: Config) -> None:
 		# Test
 		random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
 		batch = get_batch(random_subkey_1, testset_faces)
-		logits, mean, logvar = train_state.apply_fn(train_state.params, batch, random_subkey_2)
+		logits, mean, logvar = train_state.apply_fn(random_subkey_2, train_state.params, batch)
 		loss_test = vae_loss(logits, batch, mean, logvar)
 		loss_log_test.append(loss_test)
 

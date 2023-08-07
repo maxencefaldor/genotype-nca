@@ -42,7 +42,7 @@ class VAE_1(nn.Module):
         eps = jax.random.normal(random_key, shape=mean.shape)
         return eps * jnp.exp(logvar * .5) + mean
 
-    def encode(self, x, random_key):
+    def encode(self, random_key, x):
         mean, logvar = self.encoder(x)
         return self.reparameterize(random_key, mean, logvar), mean, logvar
 
@@ -52,8 +52,8 @@ class VAE_1(nn.Module):
     def generate(self, z):
         return nn.sigmoid(self.decoder(z))
 
-    def __call__(self, x, random_key):
-        z, mean, logvar = self.encode(x, random_key)
+    def __call__(self, random_key, x):
+        z, mean, logvar = self.encode(random_key, x)
         logits = self.decode(z)
         return logits, mean, logvar
 
@@ -97,7 +97,7 @@ class VAE_2(nn.Module):
         eps = jax.random.normal(random_key, shape=mean.shape)
         return eps * jnp.exp(logvar * .5) + mean
 
-    def encode(self, x, random_key):
+    def encode(self, random_key, x):
         mean, logvar = self.encoder(x)
         return self.reparameterize(random_key, mean, logvar), mean, logvar
 
@@ -107,8 +107,8 @@ class VAE_2(nn.Module):
     def generate(self, z):
         return nn.sigmoid(self.decoder(z))
 
-    def __call__(self, x, random_key):
-        z, mean, logvar = self.encode(x, random_key)
+    def __call__(self, random_key, x):
+        z, mean, logvar = self.encode(random_key, x)
         logits = self.decode(z)
         return logits, mean, logvar
 
