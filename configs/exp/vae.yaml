@@ -8,8 +8,9 @@ face_shape: [64, 64]
 grayscale: False
 
 # VAE
-batch_size: 256
-learning_rate: 1e-3
-latent_size: 64
+vae_index: 2
 n_iterations: 10_000
 log_period: 100
+batch_size: 64
+learning_rate: 1e-3
+latent_size: 64

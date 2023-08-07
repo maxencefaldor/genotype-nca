@@ -1,22 +1,27 @@
 from functools import partial
+from pathlib import Path
 
+import numpy as np
 import jax
 import jax.numpy as jnp
 from flax.training.train_state import TrainState
 import optax
+import pandas as pd
 
 from common.cell import to_rgba, make_circle_masks
 from common.pool import Pool
 from common.nca import NCA
-from common.utils import Config, load_emoji, visualize_nca, plot_loss, export_model
+from common.vae import vae_dict, vae_loss
+from common.utils import Config, load_face, visualize_nca, plot_loss, export_model
 
+import tqdm
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 import wandb
 
 
-@hydra.main(version_base="1.2", config_path="configs/", config_name="emoji")
+@hydra.main(version_base="1.2", config_path="configs/", config_name="face")
 def main(config: Config) -> None:
 	wandb.init(
 		project="genotype-nca",
@@ -27,16 +32,50 @@ def main(config: Config) -> None:
 	# Init a random key
 	random_key = jax.random.PRNGKey(config.seed)
 
-	# Experiment
-	use_pattern_pool = {"Growing": 0, "Persistent": 1, "Regenerating": 1}[config.exp.experiment_type]
-	n_damages = {"Growing": 0, "Persistent": 0, "Regenerating": 3}[config.exp.experiment_type]
+	# Load VAE
+	vae_dir = Path(config.exp.vae_dir)
+	vae_config = OmegaConf.load(vae_dir / ".hydra" / "config.yaml")
+
+	# Load list_attr_celeba.txt file into a pandas DataFrame
+	df_attr_celeba = pd.read_csv(vae_config.exp.attr_dir, sep="\s+", skiprows=1)
+	df_attr_celeba.replace(to_replace=-1, value=0, inplace=True) # replace -1 by 0
+
+	# Load list_landmarks_align_celeba.txt file into a pandas DataFrame
+	df_landmarks_align_celeba = pd.read_csv(vae_config.exp.landmarks_dir, sep="\s+", skiprows=1)
+
+	# Crop images from (218, 178) to (178, 178)
+	df_landmarks_align_celeba["lefteye_y"] = df_landmarks_align_celeba["lefteye_y"] - (218 - 178) / 2
+	df_landmarks_align_celeba["righteye_y"] = df_landmarks_align_celeba["righteye_y"] - (218 - 178) / 2
+	df_landmarks_align_celeba["nose_y"] = df_landmarks_align_celeba["nose_y"] - (218 - 178) / 2
+	df_landmarks_align_celeba["leftmouth_y"] = df_landmarks_align_celeba["leftmouth_y"] - (218 - 178) / 2
+	df_landmarks_align_celeba["rightmouth_y"] = df_landmarks_align_celeba["rightmouth_y"] - (218 - 178) / 2
+
+	# Resize images from (178, 178) to face_shape
+	df_landmarks_align_celeba /= 178/vae_config.exp.face_shape[0]
 
 	# Dataset
-	dataset_phenotypes_target = jnp.stack([load_emoji(emoji, config.exp.emoji_size, config.exp.emoji_padding) for emoji in config.exp.emojis], axis=0)
-	height, width = dataset_phenotypes_target[0].shape[:2]
+	if vae_config.exp.grayscale:
+		dataset_faces = np.zeros((df_attr_celeba.shape[0], *vae_config.exp.face_shape, 1))
+	else:
+		dataset_faces = np.zeros((df_attr_celeba.shape[0], *vae_config.exp.face_shape, 3))
+	for i, (index, _,) in tqdm.tqdm(enumerate(df_attr_celeba.iterrows()), total=df_attr_celeba.shape[0]):
+		dataset_faces[i] = load_face(vae_config.exp.dataset_dir + index, vae_config.exp.face_shape, vae_config.exp.grayscale)
+		# if i == 1000:
+		# 	break
+	height, width = vae_config.exp.face_shape[:2]
+
+	# VAE
+	vae = vae_dict[vae_config.exp.vae_index](img_shape=dataset_faces[0].shape, latent_size=vae_config.exp.latent_size)
+	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
+	params = vae.init(random_subkey_1, dataset_faces[0], random_subkey_2)
+	param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
+	print("Number of parameters: ", param_count)
 
 	# Cell states
-	cell_state_size = config.exp.phenotype_size + 1 + config.exp.hidden_size + config.exp.genotype_size
+	if vae_config.exp.grayscale:
+		cell_state_size = 1 + 1 + config.exp.hidden_size + vae_config.exp.latent_size
+	else:
+		cell_state_size = 3 + 1 + config.exp.hidden_size + vae_config.exp.latent_size
 
 	@jax.jit
 	def phenotype_target_idx_to_genotype(phenotype_target_idx):

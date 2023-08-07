@@ -74,15 +74,17 @@ def visualize_vae(face_recon, face_target, i):
 	image.save("batch_%04d.png"%i)
 
 
-def plot_loss(loss_log):
+def plot_loss(loss_log, loss_log_test=None):
 	plt.figure(figsize=(10, 4))
 	plt.title("Loss (log10)")
 	plt.plot(jnp.log10(jnp.array(loss_log)), ".", alpha=0.1)
+	if loss_log_test:
+		plt.plot(jnp.log10(jnp.array(loss_log_test)), ".")
 	plt.savefig("loss.png")
 	plt.close()
 
 
-def export_model(params, i):
+def export_model(params, filename):
 	state_dict = serialization.to_state_dict(params)
-	with open("model_%04d.pickle"%i, "wb") as params_file:
+	with open(filename, "wb") as params_file:
 		pickle.dump(state_dict, params_file)

@@ -8,7 +8,7 @@ from flax.training.train_state import TrainState
 import optax
 import pandas as pd
 
-from common.vae import VAE, vae_loss
+from common.vae import vae_dict, vae_loss
 from common.utils import Config, load_face, visualize_vae, plot_loss, export_model
 
 import tqdm
@@ -33,8 +33,6 @@ def main(config: Config) -> None:
 	df_attr_celeba = pd.read_csv(config.exp.attr_dir, sep="\s+", skiprows=1)
 	df_attr_celeba.replace(to_replace=-1, value=0, inplace=True) # replace -1 by 0
 
-	# attr = jnp.array(df_attr_celeba)
-
 	# Load list_landmarks_align_celeba.txt file into a pandas DataFrame
 	df_landmarks_align_celeba = pd.read_csv(config.exp.landmarks_dir, sep="\s+", skiprows=1)
 
@@ -48,9 +46,6 @@ def main(config: Config) -> None:
 	# Resize images from (178, 178) to face_shape
 	df_landmarks_align_celeba /= 178/config.exp.face_shape[0]
 
-	# landmarks = jnp.array(df_landmarks_align_celeba)
-	# landmarks = jax.nn.standardize(landmarks, axis=0)
-
 	# Dataset
 	if config.exp.grayscale:
 		dataset_faces = np.zeros((df_attr_celeba.shape[0], *config.exp.face_shape, 1))
@@ -58,19 +53,22 @@ def main(config: Config) -> None:
 		dataset_faces = np.zeros((df_attr_celeba.shape[0], *config.exp.face_shape, 3))
 	for i, (index, _,) in tqdm.tqdm(enumerate(df_attr_celeba.iterrows()), total=df_attr_celeba.shape[0]):
 		dataset_faces[i] = load_face(config.exp.dataset_dir + index, config.exp.face_shape, config.exp.grayscale)
+		# if i == 1000:
+		# 	break
 
 	# Trainset - Testset
-	dataset_faces = jnp.array(dataset_faces)
 	trainset_faces = dataset_faces[:int(0.9 * len(dataset_faces))]
 	testset_faces = dataset_faces[int(0.9 * len(dataset_faces)):]
 
 	# VAE
-	vae = VAE(img_shape=dataset_faces[0].shape, latent_size=config.exp.latent_size)
+	vae = vae_dict[config.exp.vae_index](img_shape=dataset_faces[0].shape, latent_size=config.exp.latent_size)
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
 	params = vae.init(random_subkey_1, dataset_faces[0], random_subkey_2)
+	param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
+	print("Number of parameters: ", param_count)
 
 	# Train state
-	lr_sched = optax.linear_schedule(init_value=config.exp.learning_rate, end_value=0.1*config.exp.learning_rate, transition_steps=2000)
+	lr_sched = optax.linear_schedule(init_value=config.exp.learning_rate, end_value=0.1*config.exp.learning_rate, transition_steps=config.exp.n_iterations)
 	tx = optax.adam(learning_rate=lr_sched)
 
 	train_state = TrainState.create(
@@ -96,32 +94,38 @@ def main(config: Config) -> None:
 
 	@jax.jit
 	def scan_train_step(carry, x):
-		train_state, dataset = carry
-		random_key_1, random_key_2 = x
-		batch = get_batch(random_key_1, dataset)
-		train_state, loss = train_step(train_state, batch, random_key_2)
-		return (train_state, dataset), loss
+		train_state = carry
+		random_key, batch = x
+		train_state, loss = train_step(train_state, batch, random_key)
+		return train_state, loss
 
 	loss_log = []
-	for i in range(config.exp.n_iterations//config.exp.log_period):
+	loss_log_test = []
+	for i in range(1, config.exp.n_iterations//config.exp.log_period+1):
 		# Train
 		random_keys = jax.random.split(random_key, 1+2*config.exp.log_period)
-		random_key, random_keys = random_keys[0], random_keys[1:]
-		(train_state, _,), loss = jax.lax.scan(
+		random_key, random_keys_batch, random_keys_scan = random_keys[-1], random_keys[:config.exp.log_period], random_keys[config.exp.log_period:-1]
+		batch = jax.vmap(get_batch, in_axes=(0, None))(random_keys_batch, trainset_faces)
+		train_state, loss = jax.lax.scan(
 			scan_train_step,
-			(train_state, trainset_faces),
-			random_keys.reshape(config.exp.log_period, 2, -1),
+			train_state,
+			(random_keys_scan, batch,),
 			length=config.exp.log_period,)
 
 		loss_log += loss.tolist()
-		print("\r step: %d, log10(loss): %.3f"%((i+1)*config.exp.log_period, jnp.log10(loss[-1])), end="")
+		print("\r step: %d, log10(loss): %.3f"%(i*config.exp.log_period, jnp.log10(jnp.mean(loss))), end="")
 
 		# Test
 		random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
-		batch_test = get_batch(random_subkey_1, testset_faces)
-		logits, _, _ = train_state.apply_fn(train_state.params, batch_test, random_subkey_2)
-		visualize_vae(nn.sigmoid(logits)[-16:], batch_test[-16:], i)
-		plot_loss(loss_log)
+		batch = get_batch(random_subkey_1, testset_faces)
+		logits, mean, logvar = train_state.apply_fn(train_state.params, batch, random_subkey_2)
+		loss_test = vae_loss(logits, batch, mean, logvar)
+		loss_log_test.append(loss_test)
+
+		plot_loss(loss_log, loss_log_test)
+		visualize_vae(nn.sigmoid(logits)[-16:], batch[-16:], i)
+
+	export_model(train_state.params, "vae.pickle")
 
 
 if __name__ == "__main__":

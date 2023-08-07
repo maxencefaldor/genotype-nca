@@ -1,0 +1,14 @@
+name: face
+
+vae_dir: /project/output/vae/2023-08-07_115619_895943
+
+# Cell state
+hidden_size: 64
+fire_rate: 0.5
+
+# Train
+n_iterations: 10_000
+log_period: 100
+batch_size: 8
+pool_size: 1024
+learning_rate: 2e-3
