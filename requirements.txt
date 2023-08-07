@@ -4,6 +4,7 @@ jax
 flax
 dm-pix
 scikit-learn
+opencv-python
 seaborn
 ipython
 ipykernel
