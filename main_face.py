@@ -70,7 +70,7 @@ def main(config: Config) -> None:
 		(jnp.tile(w, (width, 1)) <= width//4*3)), axis=-1).astype(np.float32)
 
 	dataset_size = df_attr_celeba.shape[0]
-	dataset_size = 4
+	dataset_size = 10
 	if vae_config.exp.grayscale:
 		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 1))
 	else:

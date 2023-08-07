@@ -40,12 +40,12 @@ def load_face(dir, face_shape, grayscale: bool) -> jnp.ndarray:
 		image = PIL.Image.open(dir).convert("L")
 		image = jnp.expand_dims(jnp.array(image, dtype=np.float32), axis=-1) / 255.
 		image = pix.resize_with_crop_or_pad(image, 178, 178)
-		image = jax.image.resize(image, (*face_shape, 1), method="linear")
+		image = jnp.clip(jax.image.resize(image, (*face_shape, 1), method="linear"), a_min=0., a_max=1.)
 	else:
 		image = PIL.Image.open(dir)
 		image = jnp.array(image, dtype=np.float32) / 255.
 		image = pix.resize_with_crop_or_pad(image, 178, 178)
-		image = jax.image.resize(image, (*face_shape, 3), method="linear")
+		image = jnp.clip(jax.image.resize(image, (*face_shape, 3), method="linear"), a_min=0., a_max=1.)
 	return image
 
 
