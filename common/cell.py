@@ -24,13 +24,17 @@ def get_living_mask(x):
 	alpha = to_alpha(x)
 	return nn.max_pool(alpha, window_shape=(3, 3), strides=(1, 1), padding="SAME") > 0.1
 
-@partial(jax.jit, static_argnames=("n", "h", "w",))
-def make_circle_masks(random_key, n, h, w):
-	x = jnp.linspace(-1.0, 1.0, w)[None, None, :]
-	y = jnp.linspace(-1.0, 1.0, h)[None, :, None]
+@partial(jax.jit, static_argnames=("height", "width",))
+def make_ellipse_mask(center, height, width, r1, r2):
+    x = 0.5 + jnp.linspace(0, width-1, width)[None, :]
+    y = 0.5 + jnp.linspace(0, height-1, height)[:, None]
+    x, y = (x-center[0])/r1, (y-center[1])/r2
+    mask = x*x + y*y < 1.0
+    return mask
+
+@partial(jax.jit, static_argnames=("height", "width",))
+def make_circle_masks(random_key, height, width):
 	random_key_1, random_key_2 = jax.random.split(random_key)
-	center = jax.random.uniform(random_key_1, shape=(2, n, 1, 1), minval=-0.5, maxval=0.5)
-	r = jax.random.uniform(random_key_2, shape=(n, 1, 1), minval=0.1, maxval=0.4)
-	x, y = (x-center[0])/r, (y-center[1])/r
-	mask = x*x+y*y < 1.0
-	return mask
+	center = (1 + jax.random.uniform(random_key_1, shape=(2,), minval=-0.5, maxval=0.5)) * width/2
+	r = jax.random.uniform(random_key_2, shape=(), minval=0.1, maxval=0.4) * width/2
+	return make_ellipse_mask(center, height, width, r, r)

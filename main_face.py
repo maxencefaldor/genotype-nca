@@ -10,7 +10,7 @@ from flax import serialization
 import optax
 import pandas as pd
 
-from common.cell import to_rgba, make_circle_masks
+from common.cell import to_rgba, make_circle_masks, make_ellipse_mask
 from common.pool import Pool
 from common.nca import NCA
 from common.vae import vae_dict, vae_loss
@@ -61,22 +61,18 @@ def main(config: Config) -> None:
 
 	# Dataset
 	height, width = vae_config.exp.face_shape[:2]
-	h = jnp.arange(1, height+1)
-	w = jnp.arange(1, width+1)
-	mask = jnp.expand_dims((
-		(jnp.tile(h.reshape(-1, 1), (1, height)) > height//6) & \
-		(jnp.tile(h.reshape(-1, 1), (1, height)) <= height//6*5) & \
-		(jnp.tile(w, (width, 1)) > width//4) & \
-		(jnp.tile(w, (width, 1)) <= width//4*3)), axis=-1).astype(np.float32)
-
-	dataset_size = df_attr_celeba.shape[0]
+	dataset_size = df_landmarks_align_celeba.shape[0]
 	dataset_size = 10
 	if vae_config.exp.grayscale:
 		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 1))
 	else:
 		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 3))
-	for i, (index, _,) in tqdm.tqdm(enumerate(df_attr_celeba.iterrows()), total=dataset_size):
+
+	mask = np.zeros((dataset_size, height, width, 1,))
+	for i, (index, row,) in tqdm.tqdm(enumerate(df_landmarks_align_celeba.iterrows()), total=dataset_size):
 		dataset_phenotypes_target[i] = load_face(vae_config.exp.dataset_dir + index, vae_config.exp.face_shape, vae_config.exp.grayscale)
+		center = (row["lefteye_x"] + row["righteye_x"]) / 2, (row["lefteye_y"] + row["righteye_y"]) / 2
+		mask[i, ..., 0] = make_ellipse_mask(center, width, height, 0.7*width/2, 0.9*height/2)
 		if i == dataset_size-1:
 			break
 	dataset_phenotypes_target = dataset_phenotypes_target * mask
@@ -130,7 +126,7 @@ def main(config: Config) -> None:
 		length=dataset_phenotypes_target.shape[0])
 
 	# Trainset - Testset phenotypes
-	dataset_phenotypes_target = np.concatenate([dataset_phenotypes_target, jnp.tile(mask, (dataset_phenotypes_target.shape[0], 1, 1, 1))], axis=-1)
+	dataset_phenotypes_target = np.concatenate([dataset_phenotypes_target, mask], axis=-1)
 	trainset_phenotypes_target = dataset_phenotypes_target[:int(0.9 * len(dataset_phenotypes_target))]
 	testset_phenotypes_target = dataset_phenotypes_target[int(0.9 * len(dataset_phenotypes_target)):]
 

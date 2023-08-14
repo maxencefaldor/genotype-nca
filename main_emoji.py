@@ -140,7 +140,8 @@ def main(config: Config) -> None:
 			phenotypes_target_idx_ = phenotypes_target_idx.at[0].set(new_phenotype_target_idx)
 
 			if n_damages:
-				damage = 1.0 - make_circle_masks(random_subkey_3, n_damages, height, width)[..., None]
+				random_keys = jax.random.split(random_subkey_3, n_damages)
+				damage = 1.0 - jax.vmap(make_circle_masks, in_axes=(0, None, None))(random_keys, height, width)[..., None]
 				cells_states = cells_states.at[-n_damages:].set(cells_states[-n_damages:] * damage)
 		else:
 			cells_states = jax.vmap(init_cells_state)(None)
