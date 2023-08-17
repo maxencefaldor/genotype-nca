@@ -19,7 +19,7 @@ class Config:
 	seed: int
 
 
-def load_image(url, size):
+def load_emoji_from_url(url, size):
 	r = requests.get(url)
 	image = PIL.Image.open(io.BytesIO(r.content))
 	image.thumbnail((size, size), resample=PIL.Image.Resampling.LANCZOS)
@@ -31,7 +31,7 @@ def load_image(url, size):
 def load_emoji(emoji, emoji_size, emoji_padding):
 	code = hex(ord(emoji))[2:].lower()
 	url = "https://github.com/googlefonts/noto-emoji/blob/main/png/128/emoji_u%s.png?raw=true"%code
-	image = load_image(url, emoji_size)
+	image = load_emoji_from_url(url, emoji_size)
 	return jnp.pad(image, ((emoji_padding, emoji_padding), (emoji_padding, emoji_padding), (0, 0)))
 
 
@@ -53,7 +53,7 @@ def jnp2pil(a):
 	return PIL.Image.fromarray(np.array(jnp.clip(a, a_min=0., a_max=1.) * 255, dtype=np.uint8))
 
 
-def visualize_nca(cells_states_before, cells_states_after, phenotypes_target, i):
+def visualize_nca(cells_states_before, cells_states_after, phenotypes_target, filename):
 	cells_states_before = jnp.hstack(cell.to_rgb(cells_states_before))
 	cells_states_after = jnp.hstack(cell.to_rgb(cells_states_after))
 	phenotypes_target = jnp.hstack(cell.to_rgb(phenotypes_target))
@@ -61,7 +61,7 @@ def visualize_nca(cells_states_before, cells_states_after, phenotypes_target, i)
 
 	# Save
 	img = jnp2pil(img)
-	img.save("batch_%04d.png"%i)
+	img.save(filename)
 
 
 def visualize_vae(face_recon, face_target, i):
@@ -84,7 +84,13 @@ def plot_loss(loss_log, loss_log_test=None):
 	plt.close()
 
 
-def export_model(params, filename):
+def save_params(params, filename):
 	state_dict = serialization.to_state_dict(params)
 	with open(filename, "wb") as params_file:
 		pickle.dump(state_dict, params_file)
+
+
+def load_params(params, filename):
+	with open(filename, "rb") as params_file:
+		state_dict = pickle.load(params_file)
+	return serialization.from_state_dict(params, state_dict)

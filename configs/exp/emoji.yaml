@@ -1,8 +1,5 @@
 name: emoji
 
-# Experiment
-experiment_type: "Regenerating"  # ["Growing", "Persistent", "Regenerating"]
-
 # Cell state
 phenotype_size: 3  # RGB
 hidden_size: 12  # In ``Growing Neural Cellular Automata`` paper, the total cell state size is 16 = 3 + 1 + 12.
@@ -20,3 +17,4 @@ log_period: 100
 batch_size: 8
 pool_size: 1024
 learning_rate: 2e-3
+n_damages: 3

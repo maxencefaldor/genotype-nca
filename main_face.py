@@ -1,22 +1,20 @@
 from functools import partial
 from pathlib import Path
-import pickle
 
 import numpy as np
+import pandas as pd
 import jax
 import jax.numpy as jnp
 from flax.training.train_state import TrainState
-from flax import serialization
 import optax
-import pandas as pd
 
 from common.cell import to_rgba, make_circle_masks, make_ellipse_mask
 from common.pool import Pool
-from common.nca import NCA
-from common.vae import vae_dict, vae_loss
-from common.utils import Config, load_face, visualize_nca, plot_loss, export_model
+from common.nca import NCA_big as NCA
+from common.vae import vae_dict
+from common.utils import Config, load_face, visualize_nca, plot_loss, save_params, load_params
 
-import tqdm
+from tqdm import tqdm
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
@@ -33,10 +31,6 @@ def main(config: Config) -> None:
 
 	# Init a random key
 	random_key = jax.random.PRNGKey(config.seed)
-
-	# Experiment
-	use_pattern_pool = {"Growing": 0, "Persistent": 1, "Regenerating": 1}[config.exp.experiment_type]
-	n_damages = {"Growing": 0, "Persistent": 0, "Regenerating": 3}[config.exp.experiment_type]
 
 	# Load VAE
 	vae_dir = Path(config.exp.vae_dir)
@@ -62,14 +56,14 @@ def main(config: Config) -> None:
 	# Dataset
 	height, width = vae_config.exp.face_shape[:2]
 	dataset_size = df_landmarks_align_celeba.shape[0]
-	dataset_size = 10
+	dataset_size = 20
 	if vae_config.exp.grayscale:
 		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 1))
 	else:
 		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 3))
 
 	mask = np.zeros((dataset_size, height, width, 1,))
-	for i, (index, row,) in tqdm.tqdm(enumerate(df_landmarks_align_celeba.iterrows()), total=dataset_size):
+	for i, (index, row,) in tqdm(enumerate(df_landmarks_align_celeba.iterrows()), total=dataset_size):
 		dataset_phenotypes_target[i] = load_face(vae_config.exp.dataset_dir + index, vae_config.exp.face_shape, vae_config.exp.grayscale)
 		center = (row["lefteye_x"] + row["righteye_x"]) / 2, (row["lefteye_y"] + row["righteye_y"]) / 2
 		mask[i, ..., 0] = make_ellipse_mask(center, width, height, 0.7*width/2, 0.9*height/2)
@@ -81,9 +75,7 @@ def main(config: Config) -> None:
 	vae = vae_dict[vae_config.exp.vae_index](img_shape=dataset_phenotypes_target[0].shape, latent_size=vae_config.exp.latent_size)
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
 	vae_params = vae.init(random_subkey_1, random_subkey_2, dataset_phenotypes_target[0])
-	with open(vae_dir / "vae.pickle", "rb") as params_file:
-		state_dict = pickle.load(params_file)
-	vae_params = serialization.from_state_dict(vae_params, state_dict)
+	vae_params = load_params(vae_params, vae_dir / "vae.pickle")
 	param_count = sum(x.size for x in jax.tree_util.tree_leaves(vae_params))
 	print("Number of parameters: ", param_count)
 
@@ -193,47 +185,45 @@ def main(config: Config) -> None:
 
 		return train_state, loss, cells_states_
 
-	for i in range(1, config.exp.n_iterations+1):
+	for i in tqdm(range(1, config.exp.n_iterations+1), total=config.exp.n_iterations):
 		random_key, random_subkey_1, random_subkey_2, random_subkey_3, random_subkey_4, random_subkey_5 = jax.random.split(random_key, 6)
 
-		if use_pattern_pool:
-			# Sample cells' states from pool
-			idx, cells_states, phenotypes_target_idx = pool.sample(random_subkey_1, config.exp.batch_size)
+		# Sample cells' states from pool
+		idx, cells_states, phenotypes_target_idx = pool.sample(random_subkey_1, config.exp.batch_size)
 
-			# Rank by loss
-			loss_rank = jnp.flip(jnp.argsort(loss_f(cells_states, jnp.take(trainset_phenotypes_target, phenotypes_target_idx, axis=0))))
-			idx = jnp.take(idx, loss_rank, axis=0)
-			cells_states = jnp.take(cells_states, loss_rank, axis=0)
-			phenotypes_target_idx = jnp.take(phenotypes_target_idx, loss_rank, axis=0)
+		# Rank by loss
+		loss_rank = jnp.flip(jnp.argsort(loss_f(cells_states, jnp.take(trainset_phenotypes_target, phenotypes_target_idx, axis=0))))
+		idx = jnp.take(idx, loss_rank, axis=0)
+		cells_states = jnp.take(cells_states, loss_rank, axis=0)
+		phenotypes_target_idx = jnp.take(phenotypes_target_idx, loss_rank, axis=0)
 
-			# Sample new phenotype target
-			new_phenotype_target_idx = jax.random.randint(random_subkey_2, shape=(), minval=0, maxval=trainset_phenotypes_target.shape[0])
-			new_cells_state = init_cells_state(jnp.take(trainset_genotypes_target, new_phenotype_target_idx, axis=0))
-			cells_states = cells_states.at[0].set(new_cells_state)
-			phenotypes_target_idx_ = phenotypes_target_idx.at[0].set(new_phenotype_target_idx)
+		# Sample new phenotype target
+		new_phenotype_target_idx = jax.random.randint(random_subkey_2, shape=(), minval=0, maxval=trainset_phenotypes_target.shape[0])
+		new_cells_state = init_cells_state(jnp.take(trainset_genotypes_target, new_phenotype_target_idx, axis=0))
+		cells_states = cells_states.at[0].set(new_cells_state)
+		phenotypes_target_idx_ = phenotypes_target_idx.at[0].set(new_phenotype_target_idx)
 
-			if n_damages:
-				damage = 1.0 - make_circle_masks(random_subkey_3, n_damages, height, width)[..., None]
-				cells_states = cells_states.at[-n_damages:].set(cells_states[-n_damages:] * damage)
-		else:
-			cells_states = jax.vmap(init_cells_state)(None)
+		if config.exp.n_damages:
+			random_keys = jax.random.split(random_subkey_3, config.exp.n_damages)
+			damage = 1.0 - jax.vmap(make_circle_masks, in_axes=(0, None, None))(random_keys, height, width)[..., None]
+			cells_states = cells_states.at[-config.exp.n_damages:].set(cells_states[-config.exp.n_damages:] * damage)
 
+		# Train step
 		n_iterations = jax.random.randint(random_subkey_4, shape=(), minval=64, maxval=96)
 		genotypes_target = jnp.take(trainset_genotypes_target, phenotypes_target_idx_, axis=0)
 		phenotypes_target_ = jnp.take(trainset_phenotypes_target, phenotypes_target_idx_, axis=0)
 		train_state, loss, cells_states_ = train_step(random_subkey_5, train_state, cells_states, genotypes_target, phenotypes_target_, int(n_iterations))
 
-		if use_pattern_pool:
-			pool = pool.commit(idx, cells_states_, phenotypes_target_idx_)
+		# Update pool
+		pool = pool.commit(idx, cells_states_, phenotypes_target_idx_)
 
 		loss_log.append(loss)
-		print("\r step: %d, log10(loss): %.3f"%(i, jnp.log10(loss)), end="")
+		print("\r step: {:d}, log10(loss): {:.3f}".format(i, jnp.log10(loss)), end="")
 
 		if i % config.exp.log_period == 0:
-			visualize_nca(cells_states[-16:], cells_states_[-16:], phenotypes_target_[-16:], i)
+			visualize_nca(cells_states[-16:], cells_states_[-16:], phenotypes_target_[-16:], "batch_{:07d}.png".format(i))
+			save_params(train_state.params, "nca_{:07d}.pickle".format(i))
 			plot_loss(loss_log)
-	
-	export_model(train_state.params, "nca.pickle")
 
 
 if __name__ == "__main__":

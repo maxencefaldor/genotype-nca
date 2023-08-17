@@ -60,7 +60,7 @@ class NCA(nn.Module):
 		return traverse_util.unflatten_dict(flat_params, sep="/")
 
 
-class NCA(nn.Module):
+class NCA_big(nn.Module):
 	cell_state_size: int
 	fire_rate: float
 
@@ -69,7 +69,7 @@ class NCA(nn.Module):
 		pre_life_mask = cell.get_living_mask(x)
 
 		# Perceive with depthwise convolution
-		y = nn.Conv(features=3*x.shape[-1], kernel_size=(3, 3), padding="SAME", feature_group_count=x.shape[-1], use_bias=False, name="perceive")(x)
+		y = nn.Conv(features=6*self.cell_state_size, kernel_size=(3, 3), padding="SAME", feature_group_count=x.shape[-1], use_bias=False, name="perceive")(x)
 
 		# Add genotype
 		genotype = jnp.repeat(genotype[..., None, :], repeats=x.shape[-3], axis=-2)
@@ -99,7 +99,7 @@ class NCA(nn.Module):
 
 	def set_kernel(self, params, angle=0.):
 		kernel = self._get_kernel(angle)
-		params["params"]["perceive"]["kernel"] = kernel
+		params["params"]["perceive"]["kernel"] = params["params"]["perceive"]["kernel"].at[..., :kernel.shape[-1]].set(kernel)
 		return params
 
 	def get_perceive_mask(self, params):

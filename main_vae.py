@@ -9,9 +9,9 @@ import optax
 import pandas as pd
 
 from common.vae import vae_dict, vae_loss
-from common.utils import Config, load_face, visualize_vae, plot_loss, export_model
+from common.utils import Config, load_face, visualize_vae, plot_loss, save_params
 
-import tqdm
+from tqdm import tqdm
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
@@ -101,7 +101,7 @@ def main(config: Config) -> None:
 
 	loss_log = []
 	loss_log_test = []
-	for i in range(1, config.exp.n_iterations//config.exp.log_period+1):
+	for i in tqdm(range(1, config.exp.n_iterations//config.exp.log_period+1), total=config.exp.n_iterations//config.exp.log_period):
 		# Train
 		random_keys = jax.random.split(random_key, 1+2*config.exp.log_period)
 		random_key, random_keys_batch, random_keys_scan = random_keys[-1], random_keys[:config.exp.log_period], random_keys[config.exp.log_period:-1]
@@ -113,7 +113,7 @@ def main(config: Config) -> None:
 			length=config.exp.log_period,)
 
 		loss_log += loss.tolist()
-		print("\r step: %d, log10(loss): %.3f"%(i*config.exp.log_period, jnp.log10(jnp.mean(loss))), end="")
+		print("\r step: {:d}, log10(loss): {:.3f}".format(i*config.exp.log_period, jnp.log10(jnp.mean(loss))), end="")
 
 		# Test
 		random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
@@ -122,10 +122,9 @@ def main(config: Config) -> None:
 		loss_test = vae_loss(logits, batch, mean, logvar)
 		loss_log_test.append(loss_test)
 
+		visualize_vae(nn.sigmoid(logits)[-16:], batch[-16:], "batch_{:07d}.png".format(i))
+		save_params(train_state.params, "vae_{:07d}.pickle".format(i))
 		plot_loss(loss_log, loss_log_test)
-		visualize_vae(nn.sigmoid(logits)[-16:], batch[-16:], i)
-
-	export_model(train_state.params, "vae.pickle")
 
 
 if __name__ == "__main__":

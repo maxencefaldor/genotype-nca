@@ -2,9 +2,6 @@ name: face
 
 vae_dir: /project/output/vae/2023-08-07_115619_895943
 
-# Experiment
-experiment_type: "Persistent"  # ["Growing", "Persistent", "Regenerating"]
-
 # Cell state
 hidden_size: 64
 fire_rate: 0.5
@@ -15,3 +12,4 @@ log_period: 100
 batch_size: 16
 pool_size: 1024
 learning_rate: 2e-3
+n_damages: 0

@@ -7,10 +7,10 @@ from hydra.core.config_store import ConfigStore
 def main(config: Config) -> None:
     if config.exp.name == "emoji":
         import main_emoji as main
-    elif config.exp.name == "emojis":
-        import main_emojis as main
-    elif config.exp.name == "faces":
-        import main_faces as main
+    elif config.exp.name == "face":
+        import main_face as main
+    elif config.exp.name == "vae":
+        import main_vae as main
     else:
         raise NotImplementedError
 
