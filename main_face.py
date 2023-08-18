@@ -55,8 +55,11 @@ def main(config: Config) -> None:
 
 	# Dataset
 	height, width = vae_config.exp.face_shape[:2]
-	dataset_size = df_landmarks_align_celeba.shape[0]
-	dataset_size = 1000
+	if config.exp.dataset_size == -1:
+		dataset_size = df_landmarks_align_celeba.shape[0]
+	else:
+		dataset_size = config.exp.dataset_size
+
 	if vae_config.exp.grayscale:
 		dataset_phenotypes_target = np.zeros((dataset_size, *vae_config.exp.face_shape, 1))
 	else:

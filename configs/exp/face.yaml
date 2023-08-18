@@ -11,6 +11,7 @@ fire_rate: 0.5
 # Train
 n_iterations: 10_000
 log_period: 100
+dataset_size: 1000
 batch_size: 16
 pool_size: 1024
 learning_rate: 2e-3
