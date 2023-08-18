@@ -3,6 +3,8 @@ name: emoji
 # Cell state
 phenotype_size: 3  # RGB
 hidden_size: 12  # In ``Growing Neural Cellular Automata`` paper, the total cell state size is 16 = 3 + 1 + 12.
+n_perceive_free: 0
+update_size: 128
 fire_rate: 0.5
 
 # Emoji

@@ -7,7 +7,7 @@ import optax
 
 from common.cell import to_rgba, make_circle_masks
 from common.pool import Pool
-from common.nca import NCA as NCA
+from common.nca import NCA
 from common.utils import Config, load_emoji, visualize_nca, plot_loss, save_params
 
 from tqdm import tqdm
@@ -65,10 +65,12 @@ def main(config: Config) -> None:
 	pool = Pool(cells_states=cells_states_init, phenotypes_target_idx=phenotypes_target_idx_init)
 
 	# NCA
-	nca = NCA(cell_state_size=cell_state_size, fire_rate=config.exp.fire_rate)
+	nca = NCA(cell_state_size=cell_state_size, n_perceive_free=config.exp.n_perceive_free, update_size=config.exp.update_size, fire_rate=config.exp.fire_rate)
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
 	params = nca.init(random_subkey_1, random_subkey_2, cells_states_init[0], genotypes_target_init[0])
 	params = nca.set_kernel(params)
+	param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
+	print("Number of parameters in NCA: ", param_count)
 
 	# Train state
 	lr_sched = optax.linear_schedule(init_value=config.exp.learning_rate, end_value=0.1*config.exp.learning_rate, transition_steps=2000)

@@ -65,7 +65,7 @@ def main(config: Config) -> None:
 	random_key, random_subkey_1, random_subkey_2 = jax.random.split(random_key, 3)
 	params = vae.init(random_subkey_1, random_subkey_2, dataset_faces[0])
 	param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
-	print("Number of parameters: ", param_count)
+	print("Number of parameters in VAE: ", param_count)
 
 	# Train state
 	lr_sched = optax.linear_schedule(init_value=config.exp.learning_rate, end_value=0.1*config.exp.learning_rate, transition_steps=config.exp.n_iterations)
