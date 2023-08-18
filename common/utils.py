@@ -53,15 +53,16 @@ def jnp2pil(a):
 	return PIL.Image.fromarray(np.array(jnp.clip(a, a_min=0., a_max=1.) * 255, dtype=np.uint8))
 
 
-def visualize_nca(cells_states_before, cells_states_after, phenotypes_target, filename):
+def visualize_nca(cells_states_before, cells_states_after, phenotypes_target, filename=None):
 	cells_states_before = jnp.hstack(cell.to_rgb(cells_states_before))
 	cells_states_after = jnp.hstack(cell.to_rgb(cells_states_after))
 	phenotypes_target = jnp.hstack(cell.to_rgb(phenotypes_target))
 	img = jnp.vstack([cells_states_before, cells_states_after, phenotypes_target])
-
-	# Save
 	img = jnp2pil(img)
-	img.save(filename)
+
+	if filename is not None:
+		img.save(filename)
+	return img
 
 
 def visualize_vae(face_recon, face_target, i):
